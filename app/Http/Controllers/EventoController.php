@@ -1,0 +1,62 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Http\Requests\EventoFormRequest;
+use App\Models\Evento;
+use App\Models\Pergunta;
+use App\Http\Requests\StorePerguntaRequest;
+use Illuminate\Support\Facades\Auth;
+
+class EventoController extends Controller
+{
+    public function index()
+    {
+        $eventos = Evento::all();
+        return view('eventos.index', compact('eventos'));
+    }
+
+    public function show($id)
+    {
+        $evento = Evento::findOrFail($id);
+
+        $perguntas = Pergunta::with('user')
+            ->withCount('votos')
+            ->when(auth()->check(), fn ($q) => $q->withExists([
+                'votos as votado' => fn ($v) => $v->where('users.id', auth()->id()),
+            ]))
+            ->where('evento_id', $evento->id)
+            ->where('is_public', true)
+            ->orderByDesc('votos_count')
+            ->latest()
+            ->latest('id') 
+            ->paginate(10);
+
+        return view('eventos.show', compact('evento', 'perguntas'));
+    }
+
+ 
+    public function storePergunta(StorePerguntaRequest $request, $id)
+    {
+        $evento = Evento::findOrFail($id);
+
+        Pergunta::create([
+            'evento_id' => $evento->id,
+            'user_id' => Auth::user()->id,
+            'texto' => $request->input('texto'),
+            'status' => 'pendente',
+        ]);
+
+        return redirect()->route('eventos.show', $evento->id)
+            ->with('sucesso', 'Sua pergunta foi enviada e aparecerá no telão após a aprovação do organizador.');
+    }
+
+    public function create(){
+        return view('eventos.create');
+    }
+
+    public function store(EventoFormRequest $request){
+        $evento = $request->user()->eventos()->create($request->validated());
+        return redirect()->route('eventos.show', $evento->id);
+    }
+}
